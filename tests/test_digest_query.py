@@ -1,9 +1,9 @@
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
 from app.models import Task, TaskStatus, TaskTier, User
-from app.services.digest import get_digest
+from app.services.digest import get_backlog, get_completed, get_digest, get_due_today
 
 TODAY = date(2026, 7, 22)
 
@@ -88,3 +88,73 @@ async def test_unknown_bucket_raises(session):
 
     with pytest.raises(ValueError):
         await get_digest(session, user.id, "yesterday")
+
+
+async def test_get_due_today_includes_overdue_and_due_today_but_not_dateless(session):
+    user = await _seed(session)
+    text = await get_due_today(session, user.id)
+    assert "overdue call" in text
+    assert "due this week" not in text
+    assert "no date, someday" not in text  # dateless tier-guess excluded from the push
+    assert "already done" not in text
+
+
+async def test_get_backlog_includes_only_past_due_open_tasks(session):
+    user = await _seed(session)
+    text = await get_backlog(session, user.id)
+    assert "overdue call" in text
+    assert "due this week" not in text
+    assert "no date, someday" not in text
+    assert "already done" not in text
+
+
+async def test_get_backlog_empty_when_nothing_overdue(session):
+    user = User(telegram_chat_id=4)
+    session.add(user)
+    await session.commit()
+    await session.refresh(user)
+    session.add(Task(user_id=user.id, title="future", tier=TaskTier.someday, due_date=TODAY + timedelta(days=1)))
+    await session.commit()
+
+    text = await get_backlog(session, user.id)
+    assert text == "Nothing here."
+
+
+async def test_get_completed_includes_only_last_7_days_and_excludes_dismissed(session):
+    user = User(telegram_chat_id=5)
+    session.add(user)
+    await session.commit()
+    await session.refresh(user)
+
+    now = datetime.now(timezone.utc)
+    session.add_all(
+        [
+            Task(
+                user_id=user.id,
+                title="done recently",
+                tier=TaskTier.someday,
+                status=TaskStatus.done,
+                completed_at=now - timedelta(days=2),
+            ),
+            Task(
+                user_id=user.id,
+                title="done long ago",
+                tier=TaskTier.someday,
+                status=TaskStatus.done,
+                completed_at=now - timedelta(days=10),
+            ),
+            Task(
+                user_id=user.id,
+                title="cleared recently",
+                tier=TaskTier.someday,
+                status=TaskStatus.dismissed,
+                dismissed_at=now - timedelta(days=1),
+            ),
+        ]
+    )
+    await session.commit()
+
+    text = await get_completed(session, user.id)
+    assert "done recently" in text
+    assert "done long ago" not in text
+    assert "cleared recently" not in text  # dismissed != completed

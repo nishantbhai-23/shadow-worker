@@ -1,7 +1,7 @@
 import enum
-from datetime import date, datetime, timezone
+from datetime import date, datetime, time, timezone
 
-from sqlalchemy import BigInteger, Column, DateTime, ForeignKey
+from sqlalchemy import BigInteger, Column, DateTime, ForeignKey, Time
 from sqlalchemy import Enum as SAEnum
 from sqlmodel import Field, SQLModel
 
@@ -30,12 +30,15 @@ class Task(SQLModel, table=True):
     )
     thought_id: int | None = Field(
         default=None,
-        sa_column=Column(BigInteger(), ForeignKey("thoughts.id"), nullable=True),
+        sa_column=Column(
+            BigInteger(), ForeignKey("thoughts.id", ondelete="SET NULL"), nullable=True
+        ),
     )
     title: str
     description: str | None = None
     domain: str | None = None  # unused in v0; reserved for pillar-1 specialization
     due_date: date | None = None
+    due_time: time | None = Field(default=None, sa_column=Column(Time(), nullable=True))
     tier: TaskTier = Field(
         sa_column=Column(SAEnum(TaskTier, name="task_tier"), nullable=False)
     )
@@ -51,5 +54,11 @@ class Task(SQLModel, table=True):
         sa_column=Column(DateTime(timezone=True), nullable=False),
     )
     completed_at: datetime | None = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
+    dismissed_at: datetime | None = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
+    reminded_at: datetime | None = Field(
         default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
     )

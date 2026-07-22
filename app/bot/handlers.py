@@ -12,7 +12,8 @@ from app.services.capture import (
     get_allowed_user,
     get_or_create_user,
 )
-from app.services.digest import get_digest
+from app.services.digest import get_backlog, get_completed, get_digest
+from app.services.tasks import clear_all_open_tasks, rollover_backlog
 
 
 def require_allowed_user(handler):
@@ -111,3 +112,34 @@ async def someday(update: Update, context: ContextTypes.DEFAULT_TYPE, user: User
 @require_allowed_user
 async def now(update: Update, context: ContextTypes.DEFAULT_TYPE, user: User) -> None:
     await _reply_digest(update, user, "now")
+
+
+@require_allowed_user
+async def completed(update: Update, context: ContextTypes.DEFAULT_TYPE, user: User) -> None:
+    async with async_session_maker() as session:
+        text = await get_completed(session, user.id)
+    await update.message.reply_text(text)
+
+
+@require_allowed_user
+async def backlog(update: Update, context: ContextTypes.DEFAULT_TYPE, user: User) -> None:
+    async with async_session_maker() as session:
+        text = await get_backlog(session, user.id)
+    await update.message.reply_text(text)
+
+
+@require_allowed_user
+async def rollover(update: Update, context: ContextTypes.DEFAULT_TYPE, user: User) -> None:
+    async with async_session_maker() as session:
+        count = await rollover_backlog(session, user.id)
+    await update.message.reply_text(f"Rolled {count} backlog task(s) forward by a week.")
+
+
+@require_allowed_user
+async def clear(update: Update, context: ContextTypes.DEFAULT_TYPE, user: User) -> None:
+    async with async_session_maker() as session:
+        count = await clear_all_open_tasks(session, user.id)
+    await update.message.reply_text(
+        f"Cleared {count} task(s). They'll be permanently removed in 7 days -- "
+        f'say "reopen the [task] thing" before then if you change your mind.'
+    )

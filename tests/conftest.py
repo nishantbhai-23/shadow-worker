@@ -10,6 +10,7 @@ os.environ.setdefault("LLM_MODEL", "test-model")
 os.environ.setdefault("LLM_API_KEY", "test-key")
 
 import pytest_asyncio  # noqa: E402
+from sqlalchemy import event  # noqa: E402
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine  # noqa: E402
 from sqlalchemy.pool import StaticPool  # noqa: E402
 from sqlmodel import SQLModel  # noqa: E402
@@ -28,6 +29,16 @@ async def session_maker():
         poolclass=StaticPool,
         connect_args={"check_same_thread": False},
     )
+
+    # SQLite doesn't enforce foreign keys (or their ON DELETE actions, e.g. SET NULL)
+    # unless this pragma is set per-connection -- without it, a real "ON DELETE SET
+    # NULL" FK would silently no-op under these tests while still working on Postgres.
+    @event.listens_for(engine.sync_engine, "connect")
+    def _enable_sqlite_fk(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
 

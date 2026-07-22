@@ -1,9 +1,9 @@
-from datetime import date, timedelta
+from datetime import date, time, timedelta
 
 import pytest
 
 from app.models import Task, TaskTier
-from app.services.digest import effective_tier
+from app.services.digest import _format_due, effective_tier
 
 TODAY = date(2026, 7, 22)
 
@@ -31,3 +31,25 @@ def make_task(due_date=None, tier=TaskTier.someday):
 def test_effective_tier(due_date, tier, expected):
     task = make_task(due_date=due_date, tier=tier)
     assert effective_tier(task, TODAY) == expected
+
+
+def test_format_due_shows_date_and_time_together():
+    task = Task(user_id=1, title="t", tier=TaskTier.today, due_date=TODAY, due_time=time(20, 30))
+    assert _format_due(task) == " (due 2026-07-22 at 20:30)"
+
+
+def test_format_due_date_only():
+    task = Task(user_id=1, title="t", tier=TaskTier.today, due_date=TODAY)
+    assert _format_due(task) == " (due 2026-07-22)"
+
+
+def test_format_due_time_only_no_date():
+    """Shouldn't normally happen after the triage-side fallback, but the formatter
+    should degrade gracefully if it ever does."""
+    task = Task(user_id=1, title="t", tier=TaskTier.today, due_time=time(20, 30))
+    assert _format_due(task) == " (at 20:30)"
+
+
+def test_format_due_neither_date_nor_time():
+    task = Task(user_id=1, title="t", tier=TaskTier.someday)
+    assert _format_due(task) == ""
