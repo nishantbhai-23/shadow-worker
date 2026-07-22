@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -29,13 +29,20 @@ async def _open_tasks(session: AsyncSession, user_id: int) -> list[Task]:
     return list(result.all())
 
 
+def _format_due(t: Task) -> str:
+    if t.due_date and t.due_time:
+        return f" (due {t.due_date.isoformat()} at {t.due_time.strftime('%H:%M')})"
+    if t.due_date:
+        return f" (due {t.due_date.isoformat()})"
+    if t.due_time:
+        return f" (at {t.due_time.strftime('%H:%M')})"
+    return ""
+
+
 def _format_tasks(tasks: list[Task]) -> str:
     if not tasks:
         return "Nothing here."
-    lines = []
-    for t in tasks:
-        due = f" (due {t.due_date.isoformat()})" if t.due_date else ""
-        lines.append(f"- {t.title}{due}")
+    lines = [f"- {t.title}{_format_due(t)}" for t in tasks]
     return "\n".join(lines)
 
 
@@ -61,3 +68,65 @@ async def get_digest(session: AsyncSession, user_id: int, bucket: str) -> str:
         )
 
     return _format_tasks(selected)
+
+
+async def get_due_today(session: AsyncSession, user_id: int) -> str:
+    """Used only by the unprompted daily push -- deliberately stricter than the
+    on-demand /today command: only tasks with a real due_date (includes overdue),
+    excluding dateless tier-guessed tasks. A proactive nag should be based on
+    something the user actually committed to a date, not the model's own guess."""
+    today = date.today()
+    result = await session.exec(
+        select(Task)
+        .where(
+            Task.user_id == user_id,
+            Task.status == TaskStatus.open,
+            Task.due_date.is_not(None),
+            Task.due_date <= today,
+        )
+        .order_by(Task.due_date)
+    )
+    return _format_tasks(list(result.all()))
+
+
+async def get_backlog(session: AsyncSession, user_id: int) -> str:
+    """Overdue, still-open tasks. Deliberately bypasses effective_tier -- backlog is a
+    distinct concept from the "today" bucket, which already conflates overdue with
+    due-today."""
+    today = date.today()
+    result = await session.exec(
+        select(Task)
+        .where(
+            Task.user_id == user_id,
+            Task.status == TaskStatus.open,
+            Task.due_date.is_not(None),
+            Task.due_date < today,
+        )
+        .order_by(Task.due_date)
+    )
+    return _format_tasks(list(result.all()))
+
+
+def _format_completed(tasks: list[Task]) -> str:
+    if not tasks:
+        return "Nothing here."
+    lines = []
+    for t in tasks:
+        done_date = t.completed_at.date().isoformat() if t.completed_at else "?"
+        lines.append(f"- {t.title} (done {done_date})")
+    return "\n".join(lines)
+
+
+async def get_completed(session: AsyncSession, user_id: int) -> str:
+    """Tasks actually completed (not cleared/dismissed) in the last 7 days."""
+    cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+    result = await session.exec(
+        select(Task)
+        .where(
+            Task.user_id == user_id,
+            Task.status == TaskStatus.done,
+            Task.completed_at >= cutoff,
+        )
+        .order_by(Task.completed_at.desc())
+    )
+    return _format_completed(list(result.all()))

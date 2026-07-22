@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     llm_api_key: str
     llm_base_url: str | None = None
 
-    digest_hour: int = 7
+    digest_hour: int = 10
     tz: str = "UTC"
 
 

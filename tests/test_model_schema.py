@@ -3,7 +3,7 @@ test here) doesn't distinguish TIMESTAMP from TIMESTAMPTZ, or INTEGER from BIGIN
 type mismatch against real Postgres wouldn't be caught any other way in this suite --
 both classes of bug have actually happened once already."""
 
-from sqlalchemy import BigInteger, DateTime
+from sqlalchemy import BigInteger, DateTime, Time
 
 from app.models import Task, Thought, User
 
@@ -13,6 +13,12 @@ DATETIME_COLUMNS = [
     (Thought, "processed_at"),
     (Task, "created_at"),
     (Task, "completed_at"),
+    (Task, "dismissed_at"),
+    (Task, "reminded_at"),
+]
+
+TIME_COLUMNS = [
+    (Task, "due_time"),
 ]
 
 BIGINT_COLUMNS = [
@@ -45,3 +51,17 @@ def test_all_id_and_telegram_id_columns_are_bigint():
             "BIGSERIAL columns in the Alembic migration -- a plain `int` field maps to "
             "a 32-bit INTEGER by default, which overflows on real Telegram chat ids"
         )
+
+
+def test_all_time_columns_are_time_type():
+    for model, column_name in TIME_COLUMNS:
+        column_type = model.__table__.columns[column_name].type
+        assert isinstance(column_type, Time), f"{model.__name__}.{column_name}"
+
+
+def test_thought_id_fk_has_ondelete_set_null():
+    fk = next(iter(Task.__table__.columns["thought_id"].foreign_keys))
+    assert fk.ondelete == "SET NULL", (
+        "Task.thought_id must be ON DELETE SET NULL so cleanup_old_thoughts can purge "
+        "an old thought without being blocked by a surviving task that references it"
+    )

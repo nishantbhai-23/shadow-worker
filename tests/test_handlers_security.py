@@ -1,5 +1,7 @@
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
 import app.bot.handlers as handlers_module
 from app.services.capture import get_allowed_user
 
@@ -91,3 +93,33 @@ async def test_require_allowed_user_allows_claimed_chat(session_maker, monkeypat
     await handlers_module.capture_text_message(update, context)
 
     update.message.reply_text.assert_awaited_once_with("Captured.")
+
+
+NEW_COMMAND_HANDLERS = [
+    handlers_module.completed,
+    handlers_module.backlog,
+    handlers_module.rollover,
+    handlers_module.clear,
+]
+
+
+@pytest.mark.parametrize("handler", NEW_COMMAND_HANDLERS)
+async def test_new_commands_blocked_for_unclaimed_chat(handler, session_maker, monkeypatch):
+    monkeypatch.setattr(handlers_module, "async_session_maker", session_maker)
+    update, context = make_update(chat_id=999)
+
+    await handler(update, context)
+
+    update.message.reply_text.assert_not_awaited()
+
+
+@pytest.mark.parametrize("handler", NEW_COMMAND_HANDLERS)
+async def test_new_commands_reply_for_claimed_chat(handler, session_maker, monkeypatch):
+    monkeypatch.setattr(handlers_module, "async_session_maker", session_maker)
+    claim_update, claim_context = make_update(chat_id=100, args=["test-secret"])
+    await handlers_module.start(claim_update, claim_context)
+
+    update, context = make_update(chat_id=100)
+    await handler(update, context)
+
+    update.message.reply_text.assert_awaited_once()

@@ -1,6 +1,5 @@
-# Edit `app` to something globally unique (or run `fly launch` to have Fly generate one).
-app = "shadow-worker-changeme"
-primary_region = "iad"
+app = "shadow-worker-nishantbhai23"
+primary_region = "bom"
 
 [build]
 

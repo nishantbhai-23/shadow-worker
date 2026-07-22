@@ -12,7 +12,9 @@ from app.llm.prompts import build_triage_system_prompt
 
 async def main() -> None:
     provider = get_provider(settings)
-    system_prompt = build_triage_system_prompt(date.today().isoformat())
+    system_prompt = build_triage_system_prompt(
+        date.today().isoformat(), settings.tz, open_tasks=[], recently_closed=[]
+    )
     response = await provider.complete(
         system_prompt,
         "need to call the dentist by friday, also should really clean out my closet at some point",
