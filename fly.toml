@@ -1,0 +1,17 @@
+# Edit `app` to something globally unique (or run `fly launch` to have Fly generate one).
+app = "shadow-worker-changeme"
+primary_region = "iad"
+
+[build]
+
+[processes]
+app = "python -m app.bot.main"
+
+# No [http_service] / [[services]] block on purpose: this process only makes outbound
+# connections (Telegram long-polling), so it needs no public listener. That also avoids
+# Fly's HTTP-traffic-based auto-stop/auto-start behavior, which would otherwise kill an
+# always-on poller during quiet periods.
+
+[[vm]]
+size = "shared-cpu-1x"
+memory_mb = 256

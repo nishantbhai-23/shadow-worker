@@ -1,0 +1,32 @@
+[project]
+name = "shadow-worker"
+version = "0.1.0"
+description = "ADHD capture/triage Telegram bot shell"
+requires-python = ">=3.11"
+dependencies = [
+    "python-telegram-bot[job-queue]>=21.0",
+    "sqlmodel>=0.0.22",
+    "asyncpg>=0.29",
+    "alembic>=1.13",
+    "pydantic-settings>=2.4",
+    "anthropic>=0.34",
+    "openai>=1.40",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "aiosqlite",
+    "greenlet",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
