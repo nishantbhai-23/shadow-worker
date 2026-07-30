@@ -20,6 +20,12 @@ dev = [
     "aiosqlite",
     "greenlet",
 ]
+# Local-only, for experiments/ scripts. Never installed in the Docker image (the
+# Dockerfile runs `pip install .`, which only pulls in `dependencies` above) --
+# sentence-transformers pulls in torch, which has no business on a 256MB Fly machine.
+experiments = [
+    "sentence-transformers",
+]
 
 [build-system]
 requires = ["setuptools>=68"]
