@@ -46,8 +46,28 @@ async def _on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
         )
 
 
-async def _triage_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+# Neon's free tier only stops billing compute during genuine idle gaps (it suspends
+# after ~5 min of zero activity). Two independently-scheduled frequent jobs -- even if
+# each is individually infrequent -- still touch the DB on staggered offsets, which
+# denies it any real idle gap. Combining triage + reminders into one wake-up-then-sleep
+# job, run comfortably less often than the suspend threshold, is what actually lets the
+# database scale to zero between checks (confirmed necessary: at the previous 5s/60s
+# intervals, ~900k transactions accumulated in 22 days and burned through the monthly
+# compute-hour allowance, since the DB was never idle long enough to suspend at all).
+PERIODIC_CHECK_INTERVAL_SECONDS = 600  # 10 min: comfortably past Neon's suspend threshold
+
+
+async def _periodic_check_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     await process_pending_thoughts(bot=context.bot)
+
+    async with async_session_maker() as session:
+        to_send = await due_time_reminders(session, dt.datetime.now(dt.timezone.utc), settings.tz)
+
+    for task, chat_id in to_send:
+        due_str = task.due_time.strftime("%H:%M")
+        await context.bot.send_message(
+            chat_id=chat_id, text=f'Reminder in 10 min: "{task.title}" at {due_str}.'
+        )
 
 
 async def _daily_digest_job(context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -60,17 +80,6 @@ async def _daily_digest_job(context: ContextTypes.DEFAULT_TYPE) -> None:
 
     for chat_id, text in digests:
         await context.bot.send_message(chat_id=chat_id, text=f"Today:\n{text}")
-
-
-async def _time_reminder_job(context: ContextTypes.DEFAULT_TYPE) -> None:
-    async with async_session_maker() as session:
-        to_send = await due_time_reminders(session, dt.datetime.now(dt.timezone.utc), settings.tz)
-
-    for task, chat_id in to_send:
-        due_str = task.due_time.strftime("%H:%M")
-        await context.bot.send_message(
-            chat_id=chat_id, text=f'Reminder in 10 min: "{task.title}" at {due_str}.'
-        )
 
 
 async def _cleanup_job(context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -98,8 +107,12 @@ def build_application() -> Application:
         MessageHandler(filters.TEXT & ~filters.COMMAND, capture_text_message)
     )
     application.add_handler(MessageHandler(filters.VOICE, capture_voice_message))
-    application.job_queue.run_repeating(_triage_job, interval=5, first=5)
-    application.job_queue.run_repeating(_time_reminder_job, interval=60, first=30, name="time_reminders")
+    application.job_queue.run_repeating(
+        _periodic_check_job,
+        interval=PERIODIC_CHECK_INTERVAL_SECONDS,
+        first=30,
+        name="periodic_check",
+    )
     application.job_queue.run_repeating(_cleanup_job, interval=3600, first=120, name="cleanup")
     application.job_queue.run_daily(
         _daily_digest_job,
